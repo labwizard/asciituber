@@ -1,84 +1,80 @@
-mod convert_image;
+mod image_to_ascii;
+mod options;
+
+pub use image_to_ascii::*;
+pub use options::*;
 
 use ::anyhow::Result;
-use ::crossterm::execute;
-use ::crossterm::queue;
-use ::crossterm::cursor::Hide;
-use ::crossterm::cursor::MoveTo;
-use ::crossterm::cursor::MoveToNextLine;
-use ::crossterm::cursor::Show;
-use ::crossterm::event::poll as poll_terminal;
-use ::crossterm::event::read as read_event;
-use ::crossterm::event::Event;
-use ::crossterm::style::Color;
-use ::crossterm::style::PrintStyledContent;
-use ::crossterm::style::Stylize;
-use ::crossterm::terminal::EnterAlternateScreen;
-use ::crossterm::terminal::LeaveAlternateScreen;
-use ::crossterm::terminal::size as terminal_size;
+use ::clap::Parser;
 use ::image::GenericImageView;
+use ::image::ImageOutputFormat;
+use ::image::RgbImage;
+use ::imageproc::drawing::draw_text_mut;
+use ::imageproc::drawing::text_size;
 use ::rscam::Camera;
 use ::rscam::Config;
+use ::rusttype::Font;
+use ::rusttype::Scale;
+use ::std::fs::File;
+use ::std::fs::read;
+use ::std::io::Cursor;
+use ::std::io::Seek;
+use ::std::io::SeekFrom;
 use ::std::io::Write;
 use ::std::io::stdout;
-use ::std::time::Duration;
-use convert_image::*;
-
-const BLACK: Color = Color::Rgb { r: 0, g: 0, b: 0 };
-
-struct Context { _a: () }
-
-impl Context {
-    pub fn new() -> Self {
-        let _ = execute!(stdout(), EnterAlternateScreen);
-        let _ = execute!(stdout(), Hide);
-        Context { _a: () }
-    }
-}
-
-impl Drop for Context {
-    fn drop(&mut self) {
-        let _ = execute!(stdout(), LeaveAlternateScreen);
-        let _ = execute!(stdout(), Show);
-    }
-}
 
 fn main() -> Result<()> {
-    let mut camera = Camera::new("/dev/video0").unwrap();
+    let options = Options::parse();
+    let mut camera = Camera::new(&options.input).unwrap();
     camera.start(&Config {
         interval: (1, 30),
-        resolution: (1280, 720),
+        resolution: (options.width, options.height),
         format: b"MJPG",
         .. Config::default()
     })?;
-    let mut stdout = stdout();
-    let (width, height) = terminal_size()?;
-    let (mut width, mut height) = (width as u32, height as u32);
-    let _context = Context::new();
+    let mut out_file = if options.output == "-" {
+        None
+    } else {
+        Some(File::create(options.output)?)
+    };
+    let font_bytes = read(options.font_path)?;
+    let font = Font::try_from_bytes(&font_bytes).unwrap();
+    let scale = Scale::uniform(options.font_size);
+    let (char_width, char_height) = text_size(scale, &font, "#");
+    let (char_width, char_height) = (char_width as u32, char_height as u32);
     loop {
-        while poll_terminal(Duration::new(0, 0))? {
-            if let Event::Resize(new_width, new_height) = read_event()? {
-                width = new_width as u32;
-                height = new_height as u32;
-            }
-        }
         let frame = camera.capture()?;
-        let img = ::image::load_from_memory(&frame[..])?.to_rgb8();
-        let subimg_width = img.width() / (width as u32);
-        let subimg_height = img.height() / (height as u32);
-        execute!(stdout, MoveTo(0, 0))?;
-        for y in 0..height {
-            for x in 0..width {
-                let dx = x * subimg_width;
-                let dy = y * subimg_height;
-                let subimg = img.view(dx, dy, subimg_width, subimg_height)
+        let in_image = ::image::load_from_memory(&frame[..])?.to_rgb8();
+        let mut out_image = RgbImage::new(in_image.width(), in_image.height());
+        for x in 0..(out_image.width() / char_width) {
+            let dx = x * char_width;
+            for y in 0..(out_image.height() / char_height) {
+                let dy = y * char_height;
+                let subimg = in_image.view(dx, dy, char_width, char_height)
                     .to_image();
                 let ch = image_char(&subimg);
                 let fg = image_color(&subimg);
-                queue!(stdout, PrintStyledContent(ch.with(fg).on(BLACK)))?;
+                draw_text_mut(
+                    &mut out_image,
+                    fg,
+                    dx as i32,
+                    dy as i32,
+                    scale,
+                    &font,
+                    &ch.to_string()
+                );
             }
-            queue!(stdout, MoveToNextLine(1))?;
         }
-        stdout.flush()?;
+        let mut out_buf = Cursor::new(Vec::new());
+        out_image.write_to(&mut out_buf, ImageOutputFormat::Png)?;
+        if let Some(out_file) = &mut out_file {
+            out_file.seek(SeekFrom::Start(0))?;
+            out_file.write(out_buf.get_ref())?;
+        } else {
+            stdout().write(out_buf.get_ref())?;
+        }
+        if options.single_frame {
+            break Ok(());
+        }
     }
 }
