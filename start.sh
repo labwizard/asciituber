@@ -3,9 +3,11 @@
 sudo modprobe -r v4l2loopback
 sudo modprobe v4l2loopback exclusive_caps=1
 
+cargo build --release
+
 FONT='/usr/share/fonts/noto/NotoSansMono-Regular.ttf'
 INPUT='/dev/video0'
-OUTPUT='/dev/video1'
+OUTPUT='/dev/video2'
 
 TEMP="/tmp/temp-$$.png"
 
