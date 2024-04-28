@@ -129,7 +129,7 @@ pub fn image_brightness(img: &RgbImage) -> f32 {
             deviation += mean_rgb[i].abs_diff(rgb[i] as u32);
         }
     }
-    ((4 * deviation / pixel_count) as f32).powf(2.5) / 256.0f32.powf(2.5)
+    ((8 * deviation / pixel_count) as f32).powf(4.0) / 256.0f32.powf(4.0)
 }
 
 pub fn image_color(
