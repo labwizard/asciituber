@@ -8,12 +8,14 @@ cargo build --release
 FONT='/usr/share/fonts/noto/NotoSansMono-Regular.ttf'
 INPUT='/dev/video0'
 OUTPUT='/dev/video2'
-
-TEMP="/tmp/temp-$$.png"
+WIDTH=1280
+HEIGHT=720
 
 (
-    trap 'kill 0' SIGINT;
-    cargo run --release -- -f "$FONT" -F 12 -W 1280 -H 720 "$INPUT" "$TEMP" &
-    sleep 1;
-    ffmpeg -re -stream_loop -1 -i "$TEMP" -f v4l2 -pix_fmt yuv420p -s 1280x720 "$OUTPUT"
+    trap "rm $TEMP; kill 0" SIGINT
+    cargo run --release -- \
+        -f "$FONT" -F 12 -W "$WIDTH" -H "$HEIGHT" \
+        --alt-fg=202020 \
+        "$INPUT" - \
+    | ffmpeg -f image2pipe -c:v mjpeg -i - -f v4l2 -pix_fmt yuv420p "$OUTPUT"
 )

@@ -4,8 +4,7 @@ use ::clap::Parser;
 pub struct Options {
     /// The input device to read from.
     pub input: String,
-    /// The output file to write to ('-' is stdout).
-    #[arg(default_value = "-")]
+    /// The output file to write to.
     pub output: String,
     /// The path to the font to draw in.
     #[arg(short = 'f', long = "font-path")]
