@@ -12,7 +12,7 @@ WIDTH=1280
 HEIGHT=720
 
 (
-    trap "rm $TEMP; kill 0" SIGINT
+    trap "kill 0" SIGINT
     cargo run --release -- \
         -f "$FONT" -F 12 -W "$WIDTH" -H "$HEIGHT" \
         --alt-fg=202020 \
